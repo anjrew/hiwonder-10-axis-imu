@@ -145,6 +145,31 @@ const rad = d => d * Math.PI / 180;
 function fromEuler(roll, pitch, yaw) {   // ZYX, degrees in
   return mul(rz(rad(yaw)), mul(ry(rad(pitch)), rx(rad(roll))));
 }
+function quatFromEuler(roll, pitch, yaw) {   // ZYX, degrees in -> [x, y, z, w]
+  const [cr, sr] = [Math.cos(rad(roll) / 2), Math.sin(rad(roll) / 2)];
+  const [cp, sp] = [Math.cos(rad(pitch) / 2), Math.sin(rad(pitch) / 2)];
+  const [cy, sy] = [Math.cos(rad(yaw) / 2), Math.sin(rad(yaw) / 2)];
+  return [
+    sr * cp * cy - cr * sp * sy,
+    cr * sp * cy + sr * cp * sy,
+    cr * cp * sy - sr * sp * cy,
+    cr * cp * cy + sr * sp * sy,
+  ];
+}
+
+function slerp(a, b, t) {
+  let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+  if (dot < 0) { b = b.map(v => -v); dot = -dot; }   // take the short way round
+  if (dot > 0.9995) {                                 // nearly there: plain blend
+    const q = a.map((v, i) => v + t * (b[i] - v));
+    const n = Math.hypot(...q);
+    return q.map(v => v / n);
+  }
+  const theta = Math.acos(dot), sinTheta = Math.sin(theta);
+  const wa = Math.sin((1 - t) * theta) / sinTheta, wb = Math.sin(t * theta) / sinTheta;
+  return a.map((v, i) => v * wa + b[i] * wb);
+}
+
 function fromQuat(x, y, z, w) {
   const n = Math.hypot(x, y, z, w) || 1;
   x /= n; y /= n; z /= n; w /= n;
@@ -195,6 +220,12 @@ const ctx = canvas.getContext("2d");
 const DEFAULT_VIEW = { azim: -35, elev: 42, zoom: 1 };
 let view = { ...DEFAULT_VIEW };
 let R = fromEuler(0, 0, 0);
+// The board only manages about 10 updates a second at 9600 baud, so easing
+// towards the newest reading keeps the box moving smoothly between them.
+let shownQ = [0, 0, 0, 1];      // what is on screen
+let targetQ = [0, 0, 0, 1];     // the latest reading
+const SMOOTH_TAU = 0.07;        // seconds to close most of the gap
+let lastFrameTime = null;
 let yawOffset = 0;
 let latest = null;
 let dpr = 1;
@@ -224,7 +255,10 @@ canvas.addEventListener("wheel", e => {
 addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if (k === "r") view = { ...DEFAULT_VIEW };
-  if (k === "z" && latest && latest.angle) yawOffset = latest.angle[2];
+  if (k === "z" && latest && latest.angle) {
+    yawOffset = latest.angle[2];
+    shownQ = quatFromEuler(latest.angle[0], latest.angle[1], 0);   // snap, do not sweep
+  }
 });
 
 // ---------- render ----------
@@ -251,7 +285,14 @@ function normal(a, b, c) {
   return n.map(x => x / len);
 }
 
-function draw() {
+function draw(now) {
+  const dt = lastFrameTime == null ? 0 : Math.min(0.1, (now - lastFrameTime) / 1000);
+  lastFrameTime = now;
+  if (dt > 0) {
+    shownQ = slerp(shownQ, targetQ, 1 - Math.exp(-dt / SMOOTH_TAU));
+    R = fromQuat(shownQ[0], shownQ[1], shownQ[2], shownQ[3]);
+  }
+
   const w = canvas.width, h = canvas.height;
   const scale = Math.min(w, h) * 0.2 * view.zoom;
   ctx.clearRect(0, 0, w, h);
@@ -337,11 +378,13 @@ function onSample(s) {
   status.className = s.demo ? "demo" : "live";
   status.textContent = s.demo ? "demo data — no hardware" : "live";
 
-  if (s.quaternion) {
+  if (s.angle) {
+    // built from the angle frame so the yaw offset applies; the quaternion
+    // frame says the same thing but cannot be re-zeroed as easily
+    targetQ = quatFromEuler(s.angle[0], s.angle[1], s.angle[2] - yawOffset);
+  } else if (s.quaternion) {
     const [qw, qx, qy, qz] = s.quaternion;   // the board sends w first
-    R = fromQuat(qx, qy, qz, qw);
-  } else if (s.angle) {
-    R = fromEuler(s.angle[0], s.angle[1], s.angle[2] - yawOffset);
+    targetQ = [qx, qy, qz, qw];
   }
   if (s.angle) {
     const [roll, pitch, yaw] = [s.angle[0], s.angle[1], s.angle[2] - yawOffset];

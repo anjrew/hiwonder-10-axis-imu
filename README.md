@@ -64,6 +64,44 @@ It's a plain local web page served from Python — no GUI toolkit, no JavaScript
 build step, nothing fetched from the internet. Pass `--http-port` to move it off
 8420, or `--no-browser` if you'd rather open the tab yourself.
 
+The view eases towards each new reading rather than snapping to it, because at
+9600 baud the board can only send about 10 updates a second (see below) and
+raw steps of that size look like jitter.
+
+## How much to trust the numbers
+
+Measured on a real board left sitting still for 26 seconds:
+
+| | noise (std dev) | drift |
+| --- | --- | --- |
+| roll | 0.03° | 0.2°/min |
+| pitch | 0.003° | 0.01°/min |
+| yaw | 0.09° | 0.7°/min |
+
+**Roll and pitch you can trust as absolute.** They are anchored to gravity, and
+the board's own figures agree with tilt computed from the raw accelerometer to
+within 0.1°.
+
+**Yaw you cannot.** Nothing anchors it but the magnetometer, so it is only as
+good as the magnetic field where the board is sitting — desks, laptops, motors
+and speakers all pull it around. Treat yaw as relative, and use `Z` in the 3D
+view to re-zero it whenever you need a known heading.
+
+**After movement, give it a second to settle.** Immediately after being turned,
+yaw overshoots and walks back by a few degrees over 2–3 seconds. That is the
+board's fusion filter converging, not noise.
+
+### Why it only updates 10 times a second
+
+The board sends seven frame types, each 11 bytes. At 9600 baud that is
+
+```
+7 × 11 bytes × 10 bits = 770 bits per update  →  9600 / 770 ≈ 12 updates/s
+```
+
+so the serial link, not the sensor, is the limit. Reconfiguring the board to
+115200 baud raises the ceiling to about 150 Hz.
+
 ## Wire format
 
 The board streams fixed 11-byte frames:

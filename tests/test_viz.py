@@ -24,4 +24,10 @@ def test_demo_source_shape():
 def test_page_reads_quaternion_w_first():
     html = (WEB_DIR / "index.html").read_text()
     assert "const [qw, qx, qy, qz] = s.quaternion" in html
-    assert "fromQuat(qx, qy, qz, qw)" in html
+    assert "targetQ = [qx, qy, qz, qw]" in html
+
+
+def test_page_eases_between_readings():
+    html = (WEB_DIR / "index.html").read_text()
+    assert "function slerp(" in html
+    assert "SMOOTH_TAU" in html
