@@ -22,25 +22,40 @@ WEB_DIR = Path(__file__).parent / "web"
 
 
 def demo_source() -> Iterator[dict]:
-    """Fake but plausible motion, for trying the view without hardware."""
+    """Fake but plausible motion, for trying the view without hardware.
+
+    Roughly what it looks like when you pick the board up and turn it about in
+    your hand: each axis is two sine waves of different periods added together,
+    so it drifts and doubles back instead of spinning.
+    """
+
+    # (amplitude in degrees, rate in rad/s, phase) per axis, two terms each
+    waves = {
+        "roll": [(38.0, 0.70, 0.0), (11.0, 1.90, 0.6)],
+        "pitch": [(26.0, 0.45, 1.2), (8.0, 1.30, 0.0)],
+        "yaw": [(62.0, 0.31, 0.0), (16.0, 0.83, 2.0)],
+    }
+
+    def angle(terms, t: float) -> float:
+        return sum(a * math.sin(w * t + p) for a, w, p in terms)
+
+    def rate(terms, t: float) -> float:
+        return sum(a * w * math.cos(w * t + p) for a, w, p in terms)
+
     start = time.monotonic()
     while True:
         t = time.monotonic() - start
-        roll = 35.0 * math.sin(t * 0.9)
-        pitch = 25.0 * math.sin(t * 0.6 + 1.0)
-        yaw = (t * 40.0) % 360.0 - 180.0
+        roll = angle(waves["roll"], t)
+        pitch = angle(waves["pitch"], t)
+        yaw = angle(waves["yaw"], t)
+
+        # what the accelerometer would read: gravity rotated into the board's frame
+        cr, sr = math.cos(math.radians(roll)), math.sin(math.radians(roll))
+        cp, sp = math.cos(math.radians(pitch)), math.sin(math.radians(pitch))
         yield {
             "angle": [roll, pitch, yaw],
-            "accel": [
-                -9.80665 * math.sin(math.radians(pitch)),
-                9.80665 * math.sin(math.radians(roll)),
-                9.80665 * math.cos(math.radians(roll)) * math.cos(math.radians(pitch)),
-            ],
-            "gyro": [
-                35.0 * 0.9 * math.cos(t * 0.9),
-                25.0 * 0.6 * math.cos(t * 0.6 + 1.0),
-                40.0,
-            ],
+            "accel": [-9.80665 * sp, 9.80665 * cp * sr, 9.80665 * cp * cr],
+            "gyro": [rate(waves["roll"], t), rate(waves["pitch"], t), rate(waves["yaw"], t)],
             "temp": 24.5,
             "demo": True,
         }
