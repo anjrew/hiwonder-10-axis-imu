@@ -69,3 +69,20 @@ def test_quaternion_is_w_first():
     assert w == pytest.approx(-0.0327, abs=1e-3)   # w is small near 180 deg yaw
     assert z == pytest.approx(0.9948, abs=1e-3)    # z is large
     assert abs(w) < abs(z)
+
+
+def test_configure_refuses_rates_the_link_cannot_carry():
+    from hiwonder_imu.configure import configure
+
+    with pytest.raises(ValueError, match="raise the baud rate first"):
+        configure("/dev/null", baudrate=9600, rate_hz=100)
+    with pytest.raises(ValueError, match="baud rate must be one of"):
+        configure("/dev/null", baudrate=12345)
+
+
+def test_frame_bits_matches_the_wire_format():
+    from hiwonder_imu.configure import FRAME_BITS
+    from hiwonder_imu.protocol import FRAME_LEN, FrameType
+
+    # seven frame types, each FRAME_LEN bytes, 10 bits on the wire per byte
+    assert FRAME_BITS == len(FrameType) * FRAME_LEN * 10

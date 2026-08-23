@@ -10,7 +10,7 @@ import serial
 
 from .protocol import Frame, FrameType, parse_stream
 
-DEFAULT_BAUDRATE = 9600
+DEFAULT_BAUDRATE = 115200   # what `hiwonder-imu --configure` sets; boards ship at 9600
 
 
 def find_ports() -> list[str]:

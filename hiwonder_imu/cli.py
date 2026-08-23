@@ -25,12 +25,54 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--demo", action="store_true", help="with --view, use fake motion instead of hardware")
     parser.add_argument("--http-port", type=int, default=8420, help="port for --view (default: 8420)")
     parser.add_argument("--no-browser", action="store_true", help="with --view, do not open a browser tab")
+    parser.add_argument("--configure", action="store_true",
+                        help="set the board's serial speed and output rate, permanently")
+    parser.add_argument("--set-rate", type=int, default=100, metavar="HZ",
+                        help="with --configure, output rate in Hz (default: 100)")
+    parser.add_argument("--set-baud", type=int, default=115200,
+                        help="with --configure, serial speed (default: 115200)")
+    parser.add_argument("--find", action="store_true", help="work out what speed the board is talking at")
     args = parser.parse_args(argv)
 
     if args.list_ports:
         ports = find_ports()
         print("\n".join(ports) if ports else "no USB serial devices found")
         return 0
+
+    if args.find:
+        from .configure import find_baudrate, frame_rate
+
+        device = args.port or (find_ports() or [None])[0]
+        if device is None:
+            print("no USB serial device found", file=sys.stderr)
+            return 1
+        baud = find_baudrate(device)
+        if baud is None:
+            print(f"{device}: no board found at any standard speed", file=sys.stderr)
+            return 1
+        print(f"{device}: {baud} baud, {frame_rate(device, baud) / 7:.0f} updates/s")
+        return 0
+
+    if args.configure:
+        from .configure import configure
+
+        device = args.port or (find_ports() or [None])[0]
+        if device is None:
+            print("no USB serial device found", file=sys.stderr)
+            return 1
+        print(f"configuring {device} - this changes the board permanently")
+        try:
+            r = configure(device, args.set_baud, args.set_rate)
+        except (ValueError, RuntimeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"  was {r['was']} baud, {r['rate_before'] / 7:.0f} updates/s")
+        if r["ok"]:
+            print(f"  now {r['found_at']} baud, {r['rate_after'] / 7:.0f} updates/s")
+            return 0
+        print(f"  board now answers at {r['found_at']}, not the {r['requested']} asked for",
+              file=sys.stderr)
+        return 1
 
     if args.view or args.demo:
         from .viz import serve
