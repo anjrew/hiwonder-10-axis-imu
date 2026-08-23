@@ -29,23 +29,30 @@ class ImuSample:
     gyro: tuple[float, float, float] | None = None       # deg/s
     angle: tuple[float, float, float] | None = None      # roll, pitch, yaw in degrees
     mag: tuple[float, float, float] | None = None        # raw counts
-    quaternion: tuple[float, float, float, float] | None = None
+    quaternion: tuple[float, float, float, float] | None = None   # w, x, y, z
+    pressure: float | None = None                        # Pa
+    altitude: float | None = None                        # metres
     temperature: float | None = None                     # degrees C
     seen: set[int] = field(default_factory=set)
 
     def update(self, frame: Frame) -> None:
         x, y, z, w = frame.values
         self.seen.add(frame.type)
+        # only the accel and gyro frames carry a real temperature in their 4th
+        # slot - the angle frame puts a firmware version there and the
+        # magnetometer frame leaves it at zero
         if frame.type == FrameType.ACCEL:
             self.accel, self.temperature = (x, y, z), w
         elif frame.type == FrameType.GYRO:
             self.gyro, self.temperature = (x, y, z), w
         elif frame.type == FrameType.ANGLE:
-            self.angle, self.temperature = (x, y, z), w
+            self.angle = (x, y, z)
         elif frame.type == FrameType.MAG:
-            self.mag, self.temperature = (x, y, z), w
+            self.mag = (x, y, z)
         elif frame.type == FrameType.QUATERNION:
             self.quaternion = (x, y, z, w)
+        elif frame.type == FrameType.PRESSURE:
+            self.pressure, self.altitude = x, y
 
 
 class ImuReader:

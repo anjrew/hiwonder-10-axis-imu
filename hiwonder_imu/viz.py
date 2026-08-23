@@ -73,6 +73,8 @@ def serial_source(port: str | None, baudrate: int) -> Iterator[dict]:
                 "accel": list(sample.accel) if sample.accel else None,
                 "gyro": list(sample.gyro) if sample.gyro else None,
                 "mag": list(sample.mag) if sample.mag else None,
+                "pressure": sample.pressure,
+                "altitude": sample.altitude,
                 "temp": sample.temperature,
                 "demo": False,
             }

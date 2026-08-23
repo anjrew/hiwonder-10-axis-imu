@@ -36,7 +36,9 @@ with ImuReader() as imu:          # or ImuReader("/dev/cu.usbserial-0001")
 | `gyro` | deg/s |
 | `angle` | degrees (roll, pitch, yaw) |
 | `mag` | raw counts |
-| `quaternion` | unitless (x, y, z, w) |
+| `quaternion` | unitless (w, x, y, z) — w comes first |
+| `pressure` | Pa |
+| `altitude` | metres |
 | `temperature` | °C |
 
 Any field the board isn't currently sending stays `None`.
@@ -72,16 +74,22 @@ The board streams fixed 11-byte frames:
 
 Four little-endian signed 16-bit values per frame; the checksum is the low byte
 of the sum of the first ten bytes. Frame types are `0x51` accel, `0x52` gyro,
-`0x53` angle, `0x54` magnetometer, `0x56` pressure, `0x59` quaternion. The
+`0x53` angle, `0x54` magnetometer, `0x56` barometer, `0x59` quaternion. The
 parser drops bad bytes one at a time, so it recovers on its own if you plug in
 mid-stream.
 
-**Check this against your datasheet.** The frame layout and the scale factors
-(±16 g, ±2000 deg/s, ±180°) are the common Hiwonder/WitMotion defaults, but
-your board's configuration may differ. If numbers look wrong by a constant
-factor, that's where to look — `hiwonder_imu/protocol.py`.
+Three things are easy to get wrong here, all confirmed against a real board:
 
-Default baud rate is 9600; pass `-b 115200` if yours is configured faster.
+- The barometer frame holds **two 32-bit** values (pressure in Pa, altitude in
+  cm), not four 16-bit ones like every other frame.
+- The quaternion arrives **w first**, not w last.
+- Only the accelerometer and gyro frames carry a real temperature in their
+  fourth slot. The angle frame puts a firmware version there and the
+  magnetometer frame leaves it at zero.
+
+Scale factors are ±16 g, ±2000 deg/s and ±180°, and the default baud rate is
+9600. If your board is configured differently the numbers will be wrong by a
+constant factor — `hiwonder_imu/protocol.py` is where to change them.
 
 ## Tests
 

@@ -19,3 +19,9 @@ def test_demo_source_shape():
         assert -90 <= roll <= 90
         assert -90 <= pitch <= 90
         assert -180 <= yaw <= 180
+
+
+def test_page_reads_quaternion_w_first():
+    html = (WEB_DIR / "index.html").read_text()
+    assert "const [qw, qx, qy, qz] = s.quaternion" in html
+    assert "fromQuat(qx, qy, qz, qw)" in html

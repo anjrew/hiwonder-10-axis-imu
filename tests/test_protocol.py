@@ -52,3 +52,20 @@ def test_parse_stream_handles_split_frames():
 def test_wrong_length_raises():
     with pytest.raises(ValueError):
         decode(b"\x55\x53")
+
+
+def test_pressure_frame_is_two_int32s():
+    # captured from the board on a bench at roughly sea level
+    frame = bytes.fromhex("5556f88b0100a3feffffce")
+    assert checksum_ok(frame)
+    pressure, altitude, _, _ = decode(frame).values
+    assert pressure == pytest.approx(101368.0)
+    assert altitude == pytest.approx(-3.49)
+
+
+def test_quaternion_is_w_first():
+    # captured at the same moment as roll -10.99, pitch 0.36, yaw -176.19
+    w, x, y, z = decode(bytes.fromhex("5559d0fbffffbaf3567ff9")).values
+    assert w == pytest.approx(-0.0327, abs=1e-3)   # w is small near 180 deg yaw
+    assert z == pytest.approx(0.9948, abs=1e-3)    # z is large
+    assert abs(w) < abs(z)

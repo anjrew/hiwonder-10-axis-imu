@@ -4,8 +4,9 @@ The board streams fixed 11-byte frames (WitMotion-style):
 
     0x55  <type>  d0 d1  d2 d3  d4 d5  d6 d7  <checksum>
 
-Each frame carries four little-endian signed 16-bit values. The checksum is
-the low byte of the sum of the first 10 bytes.
+Most frames carry four little-endian signed 16-bit values; the barometer frame
+(0x56) instead carries two 32-bit values. The checksum is the low byte of the
+sum of the first 10 bytes.
 """
 
 from __future__ import annotations
@@ -70,8 +71,12 @@ def decode(frame: bytes) -> Frame:
     elif kind == FrameType.MAG:
         values = (float(a), float(b), float(c), d / 100.0)  # raw counts
     elif kind == FrameType.QUATERNION:
-        scale = 1.0 / 32768.0
+        scale = 1.0 / 32768.0  # order is w, x, y, z - not the usual x, y, z, w
         values = (a * scale, b * scale, c * scale, d * scale)
+    elif kind == FrameType.PRESSURE:
+        # this frame is the odd one out: two 32-bit values, not four 16-bit ones
+        pressure, altitude = struct.unpack("<ii", frame[2:10])
+        values = (float(pressure), altitude / 100.0, 0.0, 0.0)  # Pa, metres
     else:
         values = (float(a), float(b), float(c), float(d))
 

@@ -119,6 +119,8 @@
     <section>
       <h2>Board</h2>
       <div class="row"><b>°C</b><span class="val" id="v-temp">—</span></div>
+      <div class="row"><b>hPa</b><span class="val" id="v-press">—</span></div>
+      <div class="row"><b>alt</b><span class="val" id="v-alt">—</span></div>
       <div class="row"><b>Hz</b><span class="val" id="v-rate">—</span></div>
     </section>
   </aside>
@@ -336,7 +338,8 @@ function onSample(s) {
   status.textContent = s.demo ? "demo data — no hardware" : "live";
 
   if (s.quaternion) {
-    R = fromQuat(...s.quaternion);
+    const [qw, qx, qy, qz] = s.quaternion;   // the board sends w first
+    R = fromQuat(qx, qy, qz, qw);
   } else if (s.angle) {
     R = fromEuler(s.angle[0], s.angle[1], s.angle[2] - yawOffset);
   }
@@ -351,7 +354,9 @@ function onSample(s) {
   }
   setTriple("a", s.accel);
   setTriple("g", s.gyro, 1);
-  el("v-temp").textContent = fmt(s.temp, 1);
+  if (s.temp != null) el("v-temp").textContent = fmt(s.temp, 1);
+  if (s.pressure != null) el("v-press").textContent = fmt(s.pressure / 100, 1);
+  if (s.altitude != null) el("v-alt").textContent = fmt(s.altitude, 1) + " m";
 
   ticks++;
   const dt = (performance.now() - tickStart) / 1000;
