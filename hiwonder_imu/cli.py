@@ -21,11 +21,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-n", "--count", type=int, default=0, help="stop after N samples (0 = forever)")
     parser.add_argument("--list-ports", action="store_true", help="show serial ports and exit")
     parser.add_argument("--raw", action="store_true", help="print decoded frames instead of grouped samples")
+    parser.add_argument("--view", action="store_true", help="open a live 3D view in the browser")
+    parser.add_argument("--demo", action="store_true", help="with --view, use fake motion instead of hardware")
+    parser.add_argument("--http-port", type=int, default=8420, help="port for --view (default: 8420)")
+    parser.add_argument("--no-browser", action="store_true", help="with --view, do not open a browser tab")
     args = parser.parse_args(argv)
 
     if args.list_ports:
         ports = find_ports()
         print("\n".join(ports) if ports else "no USB serial devices found")
+        return 0
+
+    if args.view or args.demo:
+        from .viz import serve
+
+        try:
+            serve(
+                port=args.port,
+                baudrate=args.baudrate,
+                http_port=args.http_port,
+                demo=args.demo,
+                open_browser=not args.no_browser,
+            )
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         return 0
 
     try:

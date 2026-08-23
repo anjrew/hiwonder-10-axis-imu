@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hiwonder IMU — live orientation</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --line: #262b36;
+    --fg: #e6e9ef;
+    --dim: #8b93a5;
+    --x: #ff6b6b;
+    --y: #51cf66;
+    --z: #4dabf7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  #status { color: var(--dim); font-size: 12px; margin-left: auto; }
+  #status.live::before { content: "●"; color: var(--z); margin-right: 6px; }
+  #status.demo::before { content: "●"; color: #ffd43b; margin-right: 6px; }
+  #status.dead::before { content: "●"; color: var(--x); margin-right: 6px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #stage { flex: 1; position: relative; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  aside {
+    width: 260px;
+    flex: none;
+    border-left: 1px solid var(--line);
+    padding: 16px 18px;
+    overflow-y: auto;
+    background: var(--panel);
+  }
+  h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--dim);
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  section + section { margin-top: 22px; }
+  .row {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .row b { font-weight: 600; font-size: 12px; }
+  .val {
+    font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; margin: 2px 0 8px; }
+  .bar i { display: block; height: 100%; border-radius: 2px; transition: width .06s linear; }
+  .ax { color: var(--x); } .ay { color: var(--y); } .az { color: var(--z); }
+  footer { padding: 10px 20px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; flex: none; }
+  kbd {
+    font: 11px ui-monospace, Menlo, monospace;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: var(--fg);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hiwonder 10-axis IMU</h1>
+  <span id="status">connecting…</span>
+</header>
+
+<main>
+  <div id="stage"><canvas id="c"></canvas></div>
+  <aside>
+    <section>
+      <h2>Orientation</h2>
+      <div class="row"><b class="ax">roll</b><span class="val" id="v-roll">—</span></div>
+      <div class="bar"><i id="b-roll" style="background:var(--x);width:50%"></i></div>
+      <div class="row"><b class="ay">pitch</b><span class="val" id="v-pitch">—</span></div>
+      <div class="bar"><i id="b-pitch" style="background:var(--y);width:50%"></i></div>
+      <div class="row"><b class="az">yaw</b><span class="val" id="v-yaw">—</span></div>
+      <div class="bar"><i id="b-yaw" style="background:var(--z);width:50%"></i></div>
+    </section>
+    <section>
+      <h2>Accelerometer m/s²</h2>
+      <div class="row"><b class="ax">x</b><span class="val" id="v-ax">—</span></div>
+      <div class="row"><b class="ay">y</b><span class="val" id="v-ay">—</span></div>
+      <div class="row"><b class="az">z</b><span class="val" id="v-az">—</span></div>
+    </section>
+    <section>
+      <h2>Gyroscope deg/s</h2>
+      <div class="row"><b class="ax">x</b><span class="val" id="v-gx">—</span></div>
+      <div class="row"><b class="ay">y</b><span class="val" id="v-gy">—</span></div>
+      <div class="row"><b class="az">z</b><span class="val" id="v-gz">—</span></div>
+    </section>
+    <section>
+      <h2>Board</h2>
+      <div class="row"><b>°C</b><span class="val" id="v-temp">—</span></div>
+      <div class="row"><b>Hz</b><span class="val" id="v-rate">—</span></div>
+    </section>
+  </aside>
+</main>
+
+<footer>Drag to orbit · scroll to zoom · <kbd>R</kbd> reset view · <kbd>Z</kbd> zero the yaw</footer>
+
+<script>
+// ---------- tiny 3x3 matrix helpers ----------
+const mul = (a, b) => a.map((_, i) =>
+  [0, 1, 2].map(j => a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j]));
+const apply = (m, v) => [
+  m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+  m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+  m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+];
+const rx = a => [[1, 0, 0], [0, Math.cos(a), -Math.sin(a)], [0, Math.sin(a), Math.cos(a)]];
+const ry = a => [[Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)]];
+const rz = a => [[Math.cos(a), -Math.sin(a), 0], [Math.sin(a), Math.cos(a), 0], [0, 0, 1]];
+const rad = d => d * Math.PI / 180;
+
+function fromEuler(roll, pitch, yaw) {   // ZYX, degrees in
+  return mul(rz(rad(yaw)), mul(ry(rad(pitch)), rx(rad(roll))));
+}
+function fromQuat(x, y, z, w) {
+  const n = Math.hypot(x, y, z, w) || 1;
+  x /= n; y /= n; z /= n; w /= n;
+  return [
+    [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+    [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+    [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+  ];
+}
+
+// ---------- the model: a little PCB with a chip, so up is obvious ----------
+function slab(cx, cy, cz, sx, sy, sz, top, side) {
+  const h = [sx / 2, sy / 2, sz / 2];
+  const v = [];
+  for (const dz of [-1, 1]) for (const dy of [-1, 1]) for (const dx of [-1, 1])
+    v.push([cx + dx * h[0], cy + dy * h[1], cz + dz * h[2]]);
+  // vertex order: index = dz*4 + dy*2 + dx
+  const f = (a, b, c, d, col) => ({ idx: [a, b, c, d], col });
+  return {
+    verts: v,
+    faces: [
+      f(4, 5, 7, 6, top),     // +z top
+      f(0, 2, 3, 1, side),    // -z bottom
+      f(0, 1, 5, 4, side),    // -y
+      f(2, 6, 7, 3, side),    // +y
+      f(0, 4, 6, 2, side),    // -x
+      f(1, 3, 7, 5, side),    // +x
+    ],
+  };
+}
+
+const PARTS = [
+  slab(0, 0, 0, 4.0, 2.6, 0.3, [46, 120, 74], [30, 84, 52]),        // green PCB
+  slab(-0.4, 0.1, 0.28, 1.1, 0.9, 0.34, [38, 42, 52], [26, 29, 36]), // sensor chip
+  slab(1.35, -0.85, 0.24, 0.9, 0.35, 0.26, [180, 180, 190], [130, 130, 140]), // header
+];
+
+// axis arrows drawn in body frame
+const AXES = [
+  { dir: [1, 0, 0], col: "#ff6b6b", label: "X" },
+  { dir: [0, 1, 0], col: "#51cf66", label: "Y" },
+  { dir: [0, 0, 1], col: "#4dabf7", label: "Z" },
+];
+
+// ---------- view state ----------
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const DEFAULT_VIEW = { azim: -35, elev: 42, zoom: 1 };
+let view = { ...DEFAULT_VIEW };
+let R = fromEuler(0, 0, 0);
+let yawOffset = 0;
+let latest = null;
+let dpr = 1;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  const r = canvas.parentElement.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(r.width * dpr));
+  canvas.height = Math.max(1, Math.round(r.height * dpr));
+}
+new ResizeObserver(resize).observe(document.getElementById("stage"));
+resize();
+
+let drag = null;
+canvas.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  view.azim += (e.clientX - drag.x) * 0.4;
+  view.elev = Math.max(-89, Math.min(89, view.elev + (e.clientY - drag.y) * 0.4));
+  drag = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener("pointerup", () => { drag = null; });
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  view.zoom = Math.max(0.4, Math.min(3, view.zoom * (e.deltaY > 0 ? 0.92 : 1.08)));
+}, { passive: false });
+addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if (k === "r") view = { ...DEFAULT_VIEW };
+  if (k === "z" && latest && latest.angle) yawOffset = latest.angle[2];
+});
+
+// ---------- render ----------
+function project(p, w, h, scale) {
+  const cam = 9;                                  // eye distance
+  const depth = cam - p[1];
+  const f = scale / depth * cam;
+  return [w / 2 + p[0] * f, h / 2 - p[2] * f, depth];
+}
+
+function shade(col, n) {
+  // one soft key light plus ambient, so faces read as distinct
+  const L = [0.35, 0.72, 0.6];
+  const d = Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
+  const k = 0.42 + 0.58 * d;
+  return `rgb(${col.map(c => Math.round(Math.min(255, c * k))).join(",")})`;
+}
+
+function normal(a, b, c) {
+  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const len = Math.hypot(...n) || 1;
+  return n.map(x => x / len);
+}
+
+function draw() {
+  const w = canvas.width, h = canvas.height;
+  const scale = Math.min(w, h) * 0.2 * view.zoom;
+  ctx.clearRect(0, 0, w, h);
+
+  const V = mul(rx(rad(-view.elev)), rz(rad(view.azim)));
+  const M = mul(V, R);
+
+  // ground grid, so motion has something to read against
+  ctx.lineWidth = 1 * dpr;
+  ctx.strokeStyle = "rgba(140,150,170,0.13)";
+  const G = 3;
+  for (let i = -G; i <= G; i++) {
+    for (const [a, b] of [[[i, -G, -1.3], [i, G, -1.3]], [[-G, i, -1.3], [G, i, -1.3]]]) {
+      const p = project(apply(V, a), w, h, scale), q = project(apply(V, b), w, h, scale);
+      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+    }
+  }
+
+  // paint far-to-near. Parts are sorted by their centre first, then faces within
+  // a part - the chip sits flush on the board, so a single global sort by face
+  // depth puts it inside the board instead of on top of it.
+  const parts = PARTS.map(part => {
+    const pts = part.verts.map(v => apply(M, v));
+    const centre = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+    const faces = [];
+    for (const face of part.faces) {
+      const p = face.idx.map(i => pts[i]);
+      const n = normal(p[0], p[1], p[2]);
+      if (n[1] < 0) continue;                       // faces away from the eye at +y, skip
+      const depth = p.reduce((s, q) => s + q[1], 0) / 4;
+      faces.push({ depth, pts: p.map(q => project(q, w, h, scale)), fill: shade(face.col, n) });
+    }
+    faces.sort((a, b) => a.depth - b.depth);
+    return { centre, faces };
+  });
+  parts.sort((a, b) => a.centre - b.centre);
+
+  for (const poly of parts.flatMap(part => part.faces)) {
+    ctx.beginPath();
+    poly.pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+    ctx.closePath();
+    ctx.fillStyle = poly.fill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = 1 * dpr;
+    ctx.stroke();
+  }
+
+  // body axes
+  ctx.lineWidth = 2.5 * dpr;
+  ctx.font = `${13 * dpr}px ui-monospace, Menlo, monospace`;
+  const o = project(apply(M, [0, 0, 0]), w, h, scale);
+  for (const ax of AXES) {
+    const tip = project(apply(M, ax.dir.map(d => d * 2.3)), w, h, scale);
+    ctx.strokeStyle = ax.col;
+    ctx.beginPath(); ctx.moveTo(o[0], o[1]); ctx.lineTo(tip[0], tip[1]); ctx.stroke();
+    ctx.fillStyle = ax.col;
+    ctx.beginPath(); ctx.arc(tip[0], tip[1], 3.5 * dpr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillText(ax.label, tip[0] + 7 * dpr, tip[1] + 4 * dpr);
+  }
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+// ---------- data ----------
+const el = id => document.getElementById(id);
+const fmt = (v, d = 2) => v == null ? "—" : v.toFixed(d);
+const setTriple = (pre, arr, d = 2) => {
+  ["x", "y", "z"].forEach((a, i) => el(`v-${pre}${a}`).textContent = arr ? fmt(arr[i], d) : "—");
+};
+
+let ticks = 0, tickStart = performance.now();
+const status = el("status");
+
+function onSample(s) {
+  latest = s;
+  if (s.error) {
+    status.className = "dead";
+    status.textContent = s.error;
+    return;
+  }
+  status.className = s.demo ? "demo" : "live";
+  status.textContent = s.demo ? "demo data — no hardware" : "live";
+
+  if (s.quaternion) {
+    R = fromQuat(...s.quaternion);
+  } else if (s.angle) {
+    R = fromEuler(s.angle[0], s.angle[1], s.angle[2] - yawOffset);
+  }
+  if (s.angle) {
+    const [roll, pitch, yaw] = [s.angle[0], s.angle[1], s.angle[2] - yawOffset];
+    el("v-roll").textContent = fmt(roll) + "°";
+    el("v-pitch").textContent = fmt(pitch) + "°";
+    el("v-yaw").textContent = fmt(yaw) + "°";
+    el("b-roll").style.width = (50 + roll / 3.6) + "%";
+    el("b-pitch").style.width = (50 + pitch / 3.6) + "%";
+    el("b-yaw").style.width = (50 + yaw / 3.6) + "%";
+  }
+  setTriple("a", s.accel);
+  setTriple("g", s.gyro, 1);
+  el("v-temp").textContent = fmt(s.temp, 1);
+
+  ticks++;
+  const dt = (performance.now() - tickStart) / 1000;
+  if (dt > 0.5) {
+    el("v-rate").textContent = (ticks / dt).toFixed(0);
+    ticks = 0;
+    tickStart = performance.now();
+  }
+}
+
+const es = new EventSource("/stream");
+es.onmessage = e => onSample(JSON.parse(e.data));
+es.onerror = () => {
+  status.className = "dead";
+  status.textContent = "disconnected";
+};
+</script>
+</body>
+</html>

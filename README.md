@@ -44,6 +44,24 @@ Any field the board isn't currently sending stays `None`.
 More in [`examples/`](examples/): [`print_angles.py`](examples/print_angles.py)
 and [`log_to_csv.py`](examples/log_to_csv.py).
 
+## 3D view
+
+```bash
+hiwonder-imu --view          # live, from the board
+hiwonder-imu --demo          # fake motion, no hardware needed
+```
+
+Opens a page in your browser showing a board that turns with the sensor, next
+to live numbers for angle, acceleration, gyro and temperature. Drag to orbit,
+scroll to zoom, `R` resets the view, `Z` zeros the yaw so "straight ahead" is
+wherever the board is pointing now.
+
+![the 3D view](docs/preview.svg)
+
+It's a plain local web page served from Python — no GUI toolkit, no JavaScript
+build step, nothing fetched from the internet. Pass `--http-port` to move it off
+8420, or `--no-browser` if you'd rather open the tab yourself.
+
 ## Wire format
 
 The board streams fixed 11-byte frames:

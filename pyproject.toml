@@ -23,3 +23,6 @@ Homepage = "https://github.com/anjrew/hiwonder-10-axis-imu"
 
 [tool.setuptools]
 packages = ["hiwonder_imu"]
+
+[tool.setuptools.package-data]
+hiwonder_imu = ["web/*.html"]
